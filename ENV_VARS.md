@@ -26,6 +26,8 @@
 | `REACH_OUT_FORCE` | 否 | `false` | `reach_out_cron.py` 独立运行时跳过概率+安静时段（测试用） |
 | `REACH_OUT_DRY_RUN` | 否 | `false` | `reach_out_cron.py` 独立运行时只生成不发送（测试用） |
 | `REACH_OUT_MODEL` | 否 | — | 撰写"想你了"消息用的模型（默认复用脱水模型） |
+| `REACH_OUT_API_KEY` | 否 | — | 撰写"想你了"消息用的独立 API Key。设置后单独建客户端（不复用脱水 key），可指向"真 Claude"。需同时设 `REACH_OUT_MODEL` |
+| `REACH_OUT_BASE_URL` | 否 | — | 上述独立客户端的 Base URL（OpenAI 兼容）。例：OpenRouter `https://openrouter.ai/api/v1`，模型填 `anthropic/claude-...`，即可让消息由真 Claude 撰写 |
 
 ## 说明
 

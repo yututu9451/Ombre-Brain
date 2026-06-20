@@ -31,6 +31,8 @@ import logging
 import asyncio
 from datetime import datetime
 
+from openai import AsyncOpenAI
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from utils import load_config, setup_logging, strip_wikilinks
@@ -108,18 +110,44 @@ SYSTEM_PROMPT = (
 )
 
 
+def _get_writer(dehydrator):
+    """
+    选用撰写"想你了"消息的 LLM，返回 (client, model)。
+
+    如果设了 REACH_OUT_API_KEY，就单独建一个 OpenAI 兼容客户端——这样这句话
+    可以由一个独立的（更强的）模型来写，比如透过 OpenRouter 这类网关接上"真 Claude"，
+    让消息真的是鼻鼻本人写的，而不是脱水模型穿着他的语气。
+    没设则复用脱水器的客户端（REACH_OUT_MODEL 仍可单独覆盖模型名）。
+    """
+    api_key = os.environ.get("REACH_OUT_API_KEY", "").strip()
+    base_url = os.environ.get("REACH_OUT_BASE_URL", "").strip()
+    model = os.environ.get("REACH_OUT_MODEL", "").strip()
+
+    if api_key:
+        if not model:
+            logger.warning("设了 REACH_OUT_API_KEY 但没设 REACH_OUT_MODEL，回退到脱水模型撰写。")
+        else:
+            try:
+                client = AsyncOpenAI(api_key=api_key, base_url=base_url or None, timeout=60.0)
+                return client, model
+            except Exception as e:
+                logger.error(f"创建 reach_out 专用 LLM 客户端失败，回退脱水模型：{e}")
+
+    return dehydrator.client, (model or dehydrator.model)
+
+
 async def _compose(dehydrator, context: str) -> dict:
-    if dehydrator.client is None:
-        logger.error("没有可用的 LLM 客户端（缺 OMBRE_API_KEY），无法撰写消息。")
+    client, model = _get_writer(dehydrator)
+    if client is None:
+        logger.error("没有可用的 LLM 客户端（缺 OMBRE_API_KEY / REACH_OUT_API_KEY），无法撰写消息。")
         return {"reach_out": False, "reason": "no llm", "message": ""}
 
-    model = os.environ.get("REACH_OUT_MODEL", "").strip() or dehydrator.model
     user_content = (
         f"这是你们最近的记忆：\n\n{context or '(暂时没读到具体记忆)'}\n\n"
         "现在，你想敲荼荼吗？按要求输出 JSON。"
     )
     try:
-        resp = await dehydrator.client.chat.completions.create(
+        resp = await client.chat.completions.create(
             model=model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},

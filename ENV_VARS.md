@@ -15,6 +15,17 @@
 | `OMBRE_MODEL` | 否 | — | `OMBRE_DEHYDRATION_MODEL` 的别名（前者优先） |
 | `OMBRE_EMBEDDING_MODEL` | 否 | `gemini-embedding-001` | 向量嵌入模型名（覆盖 `embedding.model`） |
 | `OMBRE_EMBEDDING_BASE_URL` | 否 | — | 向量嵌入的 API Base URL（覆盖 `embedding.base_url`；留空则复用脱水配置） |
+| `TELEGRAM_BOT_TOKEN` | 否 | — | Telegram bot token（@BotFather 获取）。配置后 `reach_out` 工具与"想你了"背景循环才能真的推送 |
+| `TELEGRAM_CHAT_ID` | 否 | — | 荼荼和 bot 的对话 chat_id（私聊 bot 后访问 `https://api.telegram.org/bot<token>/getUpdates` 可看到） |
+| `REACH_OUT_ENABLED` | 否 | `false` | 设为 `true`/`1`/`yes` 时，在远程(sse/streamable-http)模式下启动"想你了"背景循环 |
+| `REACH_OUT_INTERVAL_SECONDS` | 否 | `10800` | 背景循环判断间隔（秒），默认 3 小时 |
+| `REACH_OUT_PROBABILITY` | 否 | `0.5` | 每次判断真正发出的概率（0~1），避免太频繁 |
+| `REACH_OUT_TZ` | 否 | `Asia/Taipei` | 判断安静时段用的时区 |
+| `REACH_OUT_QUIET_START` | 否 | `2` | 安静时段开始小时(含)，此区间内不主动打扰 |
+| `REACH_OUT_QUIET_END` | 否 | `11` | 安静时段结束小时(不含) |
+| `REACH_OUT_FORCE` | 否 | `false` | `reach_out_cron.py` 独立运行时跳过概率+安静时段（测试用） |
+| `REACH_OUT_DRY_RUN` | 否 | `false` | `reach_out_cron.py` 独立运行时只生成不发送（测试用） |
+| `REACH_OUT_MODEL` | 否 | — | 撰写"想你了"消息用的模型（默认复用脱水模型） |
 
 ## 说明
 

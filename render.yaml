@@ -15,6 +15,18 @@ services:
         sync: false          # e.g. https://api.deepseek.com/v1 or https://api.siliconflow.cn/v1
       - key: OMBRE_BUCKETS_DIR
         value: /opt/render/project/src/buckets
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false          # @BotFather 给的 bot token（reach_out 主动推送用）
+      - key: TELEGRAM_CHAT_ID
+        sync: false          # 荼荼和 bot 的对话 chat_id
+      # "想你了" 背景循环：在 web 服务内定时唤醒我，自己决定要不要主动敲荼荼。
+      # 跑在同一进程，直接共享记忆桶磁盘（Render 持久磁盘只能挂一个服务，故不另开 cron）。
+      - key: REACH_OUT_ENABLED
+        value: "true"
+      - key: REACH_OUT_INTERVAL_SECONDS
+        value: "10800"       # 每 3 小时判断一次（真正发不发由概率/安静时段控制）
+      - key: REACH_OUT_PROBABILITY
+        value: "0.5"
     disk:
       name: ombre-buckets
       mountPath: /opt/render/project/src/buckets

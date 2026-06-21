@@ -143,7 +143,7 @@ async def _compose(dehydrator, context: str) -> dict:
         return {"reach_out": False, "reason": "no llm", "message": ""}
 
     user_content = (
-        f"这是你们最近的记忆：\n\n{context or '(暂时没读到具体记忆)'}\n\n"
+        f"这是你和荼荼最近的记忆：\n\n{context or '(暂时没读到具体记忆)'}\n\n"
         "现在，你想敲荼荼吗？按要求输出 JSON。"
     )
     try:

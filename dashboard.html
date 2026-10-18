@@ -791,6 +791,20 @@
     </div>
 
     <div class="config-section">
+      <h3>备份 / 搬家</h3>
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.6;">
+        下载整个记忆库（所有记忆桶 + 向量库 + 面板密码）为一个 zip。搬到新主机后在这里上传，同名文件会被覆盖，其他不动。
+        <span style="color:var(--warning);">⚠ 导入后面板密码会变回旧主机的密码。</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <a class="btn-primary" href="/api/backup/export" style="text-decoration:none;display:inline-block;padding:6px 14px;">⬇ 下载备份</a>
+        <button onclick="document.getElementById('backup-file-input').click()">⬆ 上传还原</button>
+        <input type="file" id="backup-file-input" accept=".zip" style="display:none" onchange="restoreBackup(this)" />
+        <span id="backup-msg" style="font-size:12px;"></span>
+      </div>
+    </div>
+
+    <div class="config-section">
       <h3>修改密码</h3>
       <div id="settings-env-notice" style="display:none;font-size:12px;color:var(--warning);margin-bottom:10px;">
         ⚠ 当前使用环境变量 OMBRE_DASHBOARD_PASSWORD，请直接修改环境变量。
@@ -1018,6 +1032,30 @@ async function saveHostVault() {
   } catch(e) {
     msg.style.color = 'var(--negative)';
     msg.textContent = '保存失败: ' + e;
+  }
+}
+
+async function restoreBackup(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  const msg = document.getElementById('backup-msg');
+  if (!confirm('要把「' + file.name + '」还原进这个记忆库吗？同名文件会被覆盖。')) return;
+  msg.style.color = 'var(--text-dim)';
+  msg.textContent = '上传中…';
+  try {
+    const resp = await authFetch('/api/backup/import', {
+      method: 'POST', headers: {'Content-Type': 'application/zip'}, body: file,
+    });
+    if (!resp) return;
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || resp.status);
+    msg.style.color = 'var(--positive)';
+    msg.textContent = '✓ 还原了 ' + data.files + ' 个文件，现在共有 ' + data.buckets + ' 个记忆桶';
+    loadSettingsStatus();
+  } catch (e) {
+    msg.style.color = 'var(--negative)';
+    msg.textContent = '还原失败: ' + e.message;
   }
 }
 

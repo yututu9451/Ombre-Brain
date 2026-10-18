@@ -1905,6 +1905,137 @@ async def api_system_status(request):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+# =============================================================
+# /api/backup — whole-vault export / import (for moving hosts)
+# /api/backup — 整库导出 / 导入（搬家用）
+#
+# Export zips everything under buckets_dir (Markdown buckets,
+# embeddings.db via SQLite's backup API, dashboard auth).
+# Import merges a zip back in: existing files with the same path
+# are overwritten, nothing else is touched.
+# =============================================================
+_BACKUP_MAX_BYTES = 512 * 1024 * 1024
+
+
+def _build_backup_zip() -> str:
+    import sqlite3
+    import tempfile
+    import zipfile
+
+    root = config["buckets_dir"]
+    fd, zip_path = tempfile.mkstemp(suffix=".zip")
+    os.close(fd)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for name in filenames:
+                full = os.path.join(dirpath, name)
+                rel = os.path.relpath(full, root).replace(os.sep, "/")
+                if rel.endswith((".db-journal", ".db-wal", ".db-shm")):
+                    continue
+                if rel.endswith(".db"):
+                    # Consistent snapshot even if a write is in flight
+                    # 用 SQLite backup API 拿一致性快照
+                    snap_fd, snap_path = tempfile.mkstemp(suffix=".db")
+                    os.close(snap_fd)
+                    try:
+                        src = sqlite3.connect(full)
+                        dst = sqlite3.connect(snap_path)
+                        with dst:
+                            src.backup(dst)
+                        src.close()
+                        dst.close()
+                        zf.write(snap_path, rel)
+                    finally:
+                        os.remove(snap_path)
+                else:
+                    zf.write(full, rel)
+    return zip_path
+
+
+@mcp.custom_route("/api/backup/export", methods=["GET"])
+async def api_backup_export(request):
+    """Download the whole buckets_dir as a zip."""
+    from starlette.background import BackgroundTask
+    from starlette.responses import FileResponse, JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    try:
+        zip_path = await asyncio.to_thread(_build_backup_zip)
+    except Exception as e:
+        return JSONResponse({"error": f"Export failed: {e}"}, status_code=500)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return FileResponse(
+        zip_path,
+        media_type="application/zip",
+        filename=f"ombre-brain-backup-{stamp}.zip",
+        background=BackgroundTask(os.remove, zip_path),
+    )
+
+
+def _restore_backup_zip(zip_path: str) -> int:
+    import shutil
+    import zipfile
+
+    root = os.path.realpath(config["buckets_dir"])
+    with zipfile.ZipFile(zip_path) as zf:
+        members = [m for m in zf.infolist() if not m.is_dir()]
+        names = [m.filename for m in members]
+        if not any(n.split("/", 1)[0] in ("permanent", "dynamic", "archive") for n in names):
+            raise ValueError("这不像 Ombre Brain 的备份包（没有 permanent/dynamic/archive）")
+        if sum(m.file_size for m in members) > _BACKUP_MAX_BYTES:
+            raise ValueError("备份包解压后太大")
+        # Validate every path before writing anything
+        # 先全部检查路径，再动手写，坏包不会只恢复一半
+        targets = []
+        for m in members:
+            dest = os.path.realpath(os.path.join(root, m.filename))
+            if not dest.startswith(root + os.sep):
+                raise ValueError(f"非法路径: {m.filename}")
+            targets.append((m, dest))
+        for m, dest in targets:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            tmp = dest + ".restoring"
+            with zf.open(m) as src, open(tmp, "wb") as out:
+                shutil.copyfileobj(src, out)
+            os.replace(tmp, dest)
+    return len(targets)
+
+
+@mcp.custom_route("/api/backup/import", methods=["POST"])
+async def api_backup_import(request):
+    """Upload a zip made by /api/backup/export and merge it into buckets_dir."""
+    import tempfile
+    from starlette.responses import JSONResponse
+    err = _require_auth(request)
+    if err: return err
+    if import_engine.is_running:
+        return JSONResponse({"error": "Import already running"}, status_code=409)
+
+    fd, zip_path = tempfile.mkstemp(suffix=".zip")
+    try:
+        size = 0
+        with os.fdopen(fd, "wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > _BACKUP_MAX_BYTES:
+                    return JSONResponse({"error": "备份包太大"}, status_code=413)
+                f.write(chunk)
+        if size == 0:
+            return JSONResponse({"error": "Empty file"}, status_code=400)
+        count = await asyncio.to_thread(_restore_backup_zip, zip_path)
+    except Exception as e:
+        return JSONResponse({"error": f"Restore failed: {e}"}, status_code=400)
+    finally:
+        if os.path.exists(zip_path):
+            os.remove(zip_path)
+    stats = await bucket_mgr.get_stats()
+    return JSONResponse({
+        "status": "ok",
+        "files": count,
+        "buckets": stats.get("permanent_count", 0) + stats.get("dynamic_count", 0),
+    })
+
+
 # --- Entry point / 启动入口 ---
 if __name__ == "__main__":
     transport = config.get("transport", "stdio")

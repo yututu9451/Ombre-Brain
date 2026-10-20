@@ -20,9 +20,9 @@ COPY *.py .
 COPY dashboard.html .
 COPY config.example.yaml ./config.yaml
 
-# Persistent mount point: bucket data
-# 持久化挂载点：记忆数据
-VOLUME ["/app/buckets"]
+# Persistent bucket data lives in /app/buckets — mount a volume there
+# (docker-compose / Railway volume). No VOLUME directive: Railway rejects it.
+# 持久化：把卷挂到 /app/buckets（Railway 不支持 Dockerfile 里的 VOLUME）
 
 # Default to streamable-http for container (remote access)
 # 容器场景默认用 streamable-http
